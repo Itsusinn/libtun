@@ -5,10 +5,12 @@ edition = "2021"
 
 [dependencies]
 
-tun = { package = "tun2", version = "1", features = ["async"] }
+# tun = { package = "tun2", version = "2", features = ["async"] }
+tun = { package = "tun2", path = "H:/Code/rust-tun", features = ["async"] }
+
 netstack-smoltcp = "0.1"
 
-tokio = { version = "1", features = ["io-util"] }
+tokio = { version = "1", features = ["io-util", "signal", "rt-multi-thread"] }
 
 eyre = "0.6"
 futures-util = "0.3"

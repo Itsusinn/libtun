@@ -1,3 +1,5 @@
+use eyre::Error;
+use eyre::Result;
 use futures_util::{SinkExt, StreamExt};
 use netstack_smoltcp::StackBuilder;
 use tun::AbstractDevice;
@@ -16,9 +18,9 @@ enum State {
   },
   NetstackCreated{
     tasks: Vec<tokio::task::JoinHandle<()>>,
-    device_name: String
+    device_name: String,
+    adapter_index: u32
   },
-  Routed(),
   AllReady(),
   Destoried,
   // TODO include thiserror
@@ -60,13 +62,14 @@ impl TunSystem {
       State::DeviceCreated { device: _, device_name }  => {
         return &device_name;
       },
-      State::NetstackCreated { tasks: _, device_name } => {
+      State::NetstackCreated { tasks: _, device_name, adapter_index: _ } => {
         return &device_name;
       },
       _ => todo!("TODO"),
     }
   }
-  pub fn create_device(&mut self) -> &Self {
+  /// STEP 1
+  pub fn create_device(&mut self) -> Result<&Self> {
     if let State::Init(cfg) = &self.state {
       match tun::create_as_async(cfg) {
         Ok(device) => self.state = State::DeviceCreated {
@@ -74,24 +77,27 @@ impl TunSystem {
           device,
         },
         // TODO include thiserror
-        Err(_) => self.state = State::Failed,
+        Err(e) => return Err(eyre::eyre!(e)),
       }
     } else {
       panic!("TODO")
     }
-    return self;
+    return Ok(self);
   }
 
-  // TODO add function callbacks
+  /// SETP2
+  /// TODO add function callbacks
   pub fn create_netstack(
     mut self,
   ) -> (
+    Self,
     netstack_smoltcp::tcp::TcpListener,
     netstack_smoltcp::udp::UdpSocket,
   ) {
-    if let State::DeviceCreated { device, device_name} = self.state {
-      let mut tasks = Vec::new();
+    if let State::DeviceCreated { device, device_name } = self.state {
 
+      let mut tasks = Vec::new();
+      let adapter_index = device.as_ref().adapter_index;
       let framed = device.into_framed();
       let builder = StackBuilder::default();
 
@@ -122,10 +128,27 @@ impl TunSystem {
       };
       tasks.push(tokio::spawn(stack2tun_task));
       tasks.push(tokio::spawn(tun2stack_task));
-      self.state = State::NetstackCreated { tasks, device_name};
-      return (tcp_listener, udp_socket);
+
+      self.state = State::NetstackCreated { tasks, device_name, adapter_index };
+      return (self, tcp_listener, udp_socket);
+    } else {
+
+      panic!("TODO")
+    }
+  }
+  pub fn create_route(
+    mut self,
+  ) -> Self {
+    if let State::NetstackCreated { tasks, device_name, adapter_index } = self.state {
+      #[cfg(target_os = "windows")]
+      {
+        println!("adapter index {}", adapter_index);
+      }
+      self.state = State::AllReady();
+      return self;
     } else {
       panic!("TODO")
     }
   }
+
 }
